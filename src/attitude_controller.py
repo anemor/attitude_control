@@ -10,11 +10,9 @@ from nav_msgs.msg import Odometry                       # sensor data
 
 from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3
 
+from simple_pid import PID                              # using this PID class because I can't be bothered
 
-
-K_POS = np.array([1.0, 1.0, 1.0]) #p,i,d
-K_VEL = np.array([1.0, 1.0, 1.0])
-
+    
 class AttitudeController():
     def __init__(self) -> None:
         # initialize node
@@ -22,6 +20,9 @@ class AttitudeController():
         node_rate = rospy.get_param("~node_rate")
         self.dt = 1.0 / node_rate
         self.rate = rospy.Rate(node_rate)
+
+        # just using the same PID for everything since i don't care about specifics rn
+        self.pid = PID(1.0, 0.1, 0.1, setpoint=0) 
 
         # initialize variables
         
@@ -48,17 +49,21 @@ class AttitudeController():
         #if self.next_wp < len(wps):
 
     # Calculations from paper 
-    def _calculate_acceleration_ref(pos : Point, pos_ref : Point, vel : Vector3) ->  np.ndarray:
+    def _get_acc_ref(pos : Point, pos_ref : Point, vel : Vector3) ->  np.ndarray:
         p = np.array([pos.x, pos.y, pos.z])
         p_ref = np.array([pos_ref.x, pos_ref.y, pos_ref.z])
         v = np.array([vel.x, vel.y, vel.z])
+
+        # just random values
+        K_POS = np.array([1.0, 1.0, 1.0]) 
+        K_VEL = np.array([1.0, 1.0, 1.0])
 
         a_fb = -K_POS*(p - p_ref) + -K_VEL*v
         a_ref = a_fb + np.array([0.0, 0.0, 9.81])
         
         return a_ref
 
-    def _calculate_orientation_ref(yaw : float, a_ref : np.ndarray) -> np.ndarray:
+    def _get_att_ref(yaw : float, a_ref : np.ndarray) -> np.ndarray:
         x_c = np.array([math.cos(yaw), math.sin(yaw), 0.0])
         y_c = np.array([-math.sin(yaw), math.cos(yaw), 0.0])
 
@@ -73,38 +78,43 @@ class AttitudeController():
 
         return q_ref #[x,y,z,0] rad
 
+    def _publish_control_msg(self, roll_control, pitch_control, yaw_rate_control, thrust_control) -> None:
+        # publish to self.rates_thrust_pub
+        control_msg = RollPitchYawrateThrust()
+        control_msg.roll = roll_control
+        control_msg.pitch = pitch_control
+        control_msg.yaw_rate = yaw_rate_control
+        # sim_input_msg.thrust.z = self.acc_ref[2]*0.5
+        control_msg.thrust.z = thrust_control
+        control_msg.header.stamp = rospy.Time.now()
 
-    def publish_thrust(self) -> None:
+        self.rates_thrust_pub.publish(control_msg)
+
+
+    def generate_control(self) -> None:
 
         while not rospy.is_shutdown():
             
-            
             # update reference
-
-            # reference acceleration -> reference orientation
-            self.pos_ref = self.waypoints[self.next_wp_n].transforms[0].translation if self.next_wp_n < len(self.waypoints) else self.pos
-            self.acc_ref = self._calculate_acceleration_ref(self.pos, self.pos_ref, self.vel) 
-            self.att_q_ref = self._calculate_orientation_ref(self.att.z, self.acc_ref)
+            pos_ref = self.waypoints[self.next_wp_n].transforms[0].translation if self.next_wp_n < len(self.waypoints) else self.pos
+            acc_ref = self._get_acc_ref(self.pos, self.pos_ref, self.vel) 
+            att_q_ref = self._get_att_ref(self.att.z, self.acc_ref)
 
             # PID calculate collective thrust
-            roll_err = self.att_q_ref[0] - self.att.x
-            pitch_err = self.att_q_ref[1] - self.att.y
-            yaw_rate_err = self.att_q_ref[2] - self.att.z # TODO currently using yaw not rate
+            roll_err = att_q_ref[0] - self.att.x
+            pitch_err = att_q_ref[1] - self.att.y
+            yaw_rate_err = att_q_ref[2] - self.att.z # TODO currently using yaw not rate
         
+            # PID here o/
+            roll_control = self.pid(roll_err)
+            pitch_control = self.pid(pitch_err)
+            yaw_rate_control = self.pid(yaw_rate_err)
 
-            # publish to self.rates_thrust_pub
-            sim_input_msg = RollPitchYawrateThrust()
-            sim_input_msg.header.stamp = rospy.Time.now()
-            sim_input_msg.roll = roll_sim_input
-            sim_input_msg.pitch = pitch_sim_input
-            sim_input_msg.yaw_rate = yaw_rate_sim_input
-            sim_input_msg.thrust.z = a_ref[2]*0.5
-
-            self.rates_thrust_pub.publish(sim_input_msg)
+            self._publish_control_msg(roll_control, pitch_control, yaw_rate_control, self.acc_ref[2]*0.5)
 
             self.rate.sleep()
         
 
 if __name__ == '__main__':
     node = AttitudeController()
-    rospy.spin()
+    node.generate_control()
