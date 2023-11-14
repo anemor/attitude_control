@@ -1,10 +1,12 @@
+#!/usr/bin/env python3
+
 import rospy
 
 import numpy as np
 import math                                             # accel and orientation calculations
 from scipy.spatial.transform import Rotation
 
-from nav_msgs.msg import RollPitchYawrateThrust         # input to rotors_control package
+from mav_msgs.msg import RollPitchYawrateThrust         # input to rotors_control package
 from trajectory_msgs.msg import MultiDOFJointTrajectory # reference trajectory (pos + yaw)
 from nav_msgs.msg import Odometry                       # sensor data
 
@@ -22,20 +24,26 @@ class AttitudeController():
         self.rate = rospy.Rate(node_rate)
 
         # just using the same PID for everything since i don't care about specifics rn
-        self.pid = PID(1.0, 0.1, 0.1, setpoint=0) 
+        self.roll_pid = PID(1.0, 0.1, 0.1, setpoint=0) 
+        self.pitch_pid = PID(1.0, 0.1, 0.1, setpoint=0) 
+        self.yaw_rate_pid = PID(1.0, 0.1, 0.1, setpoint=0) 
 
         # initialize variables
-        
+        self.next_wp_n = 0
+        self.pos = Point()
+        self.vel = Vector3()
+        self.att = Point()
+        self.waypoints = [] #MultiDOFJointTrajectory()
 
         # publishers
-        self.rates_thrust_pub = rospy.Publisher('rmf_obelix/command/roll_pitch_yawrate_thrust', RollPitchYawrateThrust, queue_size=1)
+        self.rates_thrust_pub = rospy.Publisher('rmf_obelix/command/roll_pitch_yawrate_thrust', RollPitchYawrateThrust, queue_size=10)
 
         # subscribers
         self.ref_waypoints_sub = rospy.Subscriber('rmf_obelix/command/trajectory', MultiDOFJointTrajectory, self._ref_waypoints_cb, queue_size=1)
         self.pose_sub = rospy.Subscriber('rmf_obelix/odometry_sensor1/odometry', Odometry, self._pose_cb)
     
     # CALLBACKS
-    def _ref_wayppints_cb(self, msg : MultiDOFJointTrajectory) -> None:
+    def _ref_waypoints_cb(self, msg : MultiDOFJointTrajectory) -> None:
         # receive 10 waypoints at a time, start at nr0
         self.waypoints = msg.points
         self.next_wp_n = 0
@@ -44,12 +52,12 @@ class AttitudeController():
         self.pos = msg.pose.pose.position
         self.vel = msg.twist.twist.linear
         self.att = msg.pose.pose.orientation
-        # timestamp ???        
+        # timestamp ??? 
 
         #if self.next_wp < len(wps):
 
     # Calculations from paper 
-    def _get_acc_ref(pos : Point, pos_ref : Point, vel : Vector3) ->  np.ndarray:
+    def _get_acc_ref(self, pos : Point, pos_ref : Point, vel : Vector3) ->  np.ndarray:
         p = np.array([pos.x, pos.y, pos.z])
         p_ref = np.array([pos_ref.x, pos_ref.y, pos_ref.z])
         v = np.array([vel.x, vel.y, vel.z])
@@ -63,7 +71,7 @@ class AttitudeController():
         
         return a_ref
 
-    def _get_att_ref(yaw : float, a_ref : np.ndarray) -> np.ndarray:
+    def _get_att_ref(self, yaw : float, a_ref : np.ndarray) -> np.ndarray:
         x_c = np.array([math.cos(yaw), math.sin(yaw), 0.0])
         y_c = np.array([-math.sin(yaw), math.cos(yaw), 0.0])
 
@@ -92,13 +100,12 @@ class AttitudeController():
 
 
     def generate_control(self) -> None:
-
+        rospy.loginfo("Starting generate_control")
         while not rospy.is_shutdown():
-            
             # update reference
             pos_ref = self.waypoints[self.next_wp_n].transforms[0].translation if self.next_wp_n < len(self.waypoints) else self.pos
-            acc_ref = self._get_acc_ref(self.pos, self.pos_ref, self.vel) 
-            att_q_ref = self._get_att_ref(self.att.z, self.acc_ref)
+            acc_ref = self._get_acc_ref(self.pos, pos_ref, self.vel) 
+            att_q_ref = self._get_att_ref(self.att.z, acc_ref)
 
             # PID calculate collective thrust
             roll_err = att_q_ref[0] - self.att.x
@@ -106,15 +113,16 @@ class AttitudeController():
             yaw_rate_err = att_q_ref[2] - self.att.z # TODO currently using yaw not rate
         
             # PID here o/
-            roll_control = self.pid(roll_err)
-            pitch_control = self.pid(pitch_err)
-            yaw_rate_control = self.pid(yaw_rate_err)
+            roll_control = self.roll_pid(roll_err)
+            pitch_control = self.pitch_pid(pitch_err)
+            yaw_rate_control = self.yaw_rate_pid(yaw_rate_err)
 
-            self._publish_control_msg(roll_control, pitch_control, yaw_rate_control, self.acc_ref[2]*0.5)
+            self._publish_control_msg(roll_control, pitch_control, yaw_rate_control, acc_ref[2]*0.5)
 
             self.rate.sleep()
         
 
 if __name__ == '__main__':
+    rospy.loginfo("Starting attitude_controller_node.py")
     node = AttitudeController()
     node.generate_control()
