@@ -5,7 +5,7 @@ Requirements in addition to the gbplanner ROS stuff: numpy, scipy, and simple_pi
 Add the following lines to `rmf_sim.launch`
 ``` 
 <!-- Launch the nodes needed for TTK22 attitude controller -->
-<node pkg="attitude_control" type="attitude_controller_node.py" name="attitude_control" output="screen"/>
+<node pkg="attitude_control" type="attitude_controller_node.py" name="attitude_controller_node" output="screen"/>
 <node pkg="rotors_control" type="roll_pitch_yawrate_thrust_controller_node.py" name="rotors_control" output="screen"/>
 ```
 
