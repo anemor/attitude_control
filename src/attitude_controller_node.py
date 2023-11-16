@@ -6,6 +6,8 @@ import numpy as np
 import math                                             # accel and orientation calculations
 from scipy.spatial.transform import Rotation
 
+from simple_pid import PID                              # using this PID class because making my own would look just like this
+
 # from tf.transformations import quaternion_from_matrix, euler_from_quaternion, euler_from_matrix, quaternion_multiply
 
 from mav_msgs.msg import RollPitchYawrateThrust         # input to rotors_control package
@@ -14,7 +16,6 @@ from nav_msgs.msg import Odometry                       # sensor data
 
 from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3
 
-from simple_pid import PID                              # using this PID class because I can't be bothered
 
     
 class AttitudeController():
