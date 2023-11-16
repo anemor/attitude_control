@@ -1,6 +1,6 @@
 ### Attitude controller
 
-Attitude controller ROS node written as an exercise in writing a node for the existing project, which can be found here: [https://github.com/ntnu-arl/gbplanner_ros/tree/d9ecc1f6ab597a6beb183ef058280ad207dc5bf9](https://github.com/ntnu-arl/gbplanner_ros/tree/d9ecc1f6ab597a6beb183ef058280ad207dc5bf9)
+Attitude controller ROS node written as an exercise in writing a node for the existing project, which can be found here: [https://github.com/ntnu-arl/gbplanner_ros](https://github.com/ntnu-arl/gbplanner_ros)
 
 Requirements in addition to the gbplanner ROS stuff: numpy, scipy, and simple_pid (`pip install simple-pid `)
 
